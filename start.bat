@@ -29,57 +29,9 @@ if exist "%PROJECT_ROOT%\dependency\node" (
 if exist "%PROJECT_ROOT%\dependency\cloakbrowser\chrome.exe" (
     set "CLOAKBROWSER_BINARY_PATH=%PROJECT_ROOT%\dependency\cloakbrowser\chrome.exe"
 )
-:: --- 项目代码管理（git clone / 强制更新到最新）---
-set "REPO_URL=https://github.com/DevilJie/social-auto-upload-web-ui.git"
-set "MAIN_BRANCH=master"
+:: --- 项目代码管理（已关闭启动时自动更新与覆盖）---
+:: 保持本地代码完整性，代码拉取与同步统一在 GitHub Desktop 中自主管理
 
-if not exist "%BACKEND_DIR%" (
-    rem 首次使用：没有项目代码，从 GitHub 克隆
-    where git >nul 2>&1
-    if !errorlevel! neq 0 (
-        echo   X 未找到 git，无法克隆项目代码
-        pause
-        exit /b 1
-    )
-    echo.
-    echo   首次使用，正在从 GitHub 拉取项目代码...
-    cd /d "%PROJECT_ROOT%"
-    git init
-    git remote add origin "%REPO_URL%" 2>nul || git remote set-url origin "%REPO_URL%"
-    git fetch
-    git fetch origin "%MAIN_BRANCH%"
-    if !errorlevel! neq 0 (
-        echo   X 无法连接 GitHub，请检查网络连接
-        echo     如果无法访问 GitHub，请手动下载项目代码到当前目录
-        echo     仓库地址: %REPO_URL%
-        pause
-        exit /b 1
-    )
-    git checkout -f "%MAIN_BRANCH%"
-    git reset --hard "origin/%MAIN_BRANCH%"
-    echo   √ 项目代码拉取完成
-    echo.
-    call "%PROJECT_ROOT%\start.bat"
-    exit /b
-)
-
-:: 已有项目代码：强制更新到最新版本（覆盖本地修改，不询问）
-if exist "%PROJECT_ROOT%\.git" (
-    where git >nul 2>&1
-    if !errorlevel! equ 0 (
-        cd /d "%PROJECT_ROOT%"
-        echo   正在检查并更新到最新版本...
-        git remote set-url origin "%REPO_URL%" 2>nul
-        git fetch origin "%MAIN_BRANCH%" >nul 2>&1
-        if !errorlevel! equ 0 (
-            git checkout -f "%MAIN_BRANCH%" >nul 2>&1
-            git reset --hard "origin/%MAIN_BRANCH%" >nul 2>&1
-            echo   √ 已更新到最新版本
-        ) else (
-            echo   ! 无法连接 GitHub 更新，继续使用本地版本
-        )
-    )
-)
 
 
 :: --- 日志文件 ---
@@ -228,10 +180,10 @@ for /f "tokens=5" %%a in ('netstat -aon ^| findstr :5409 ^| findstr LISTENING 2^
 )
 echo   √ 端口 5409 空闲
 
-for /f "tokens=5" %%a in ('netstat -aon ^| findstr :5173 ^| findstr LISTENING 2^>nul') do (
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr :5188 ^| findstr LISTENING 2^>nul') do (
     taskkill /F /PID %%a >nul 2>&1
 )
-echo   √ 端口 5173 空闲
+echo   √ 端口 5188 空闲
 
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr :5410 ^| findstr LISTENING 2^>nul') do (
     taskkill /F /PID %%a >nul 2>&1
@@ -247,7 +199,7 @@ echo [3/6] 准备后端环境...
 set "VENV_DIR=%BACKEND_DIR%\.venv"
 set "VENV_PYTHON=%VENV_DIR%\Scripts\python.exe"
 set "VENV_PIP=%VENV_DIR%\Scripts\pip.exe"
-set "PIP_MIRROR=https://mirrors.aliyun.com/pypi/simple/"
+set "PIP_MIRROR=https://pypi.tuna.tsinghua.edu.cn/simple"
 set "HASH_FILE=%PROJECT_ROOT%\.backend_deps_hash"
 
 :: 获取 backend 目录最近 git commit hash
@@ -277,7 +229,7 @@ if "!VENV_OK!"=="0" (
         exit /b 1
     )
 
-    python -m venv "%VENV_DIR%" --clear
+    python -m venv "%VENV_DIR%" --system-site-packages
     if !errorlevel! neq 0 (
         echo   X 虚拟环境创建失败
         echo     可能原因:
@@ -288,10 +240,9 @@ if "!VENV_OK!"=="0" (
         pause
         exit /b 1
     )
-    echo     安装 Python 依赖，请稍候...
+    echo     安装 Python 依赖（复用系统已有环境，仅增量补全）...
     echo.
-    "%VENV_PIP%" cache purge >nul 2>&1
-    "%VENV_PIP%" install -r "%BACKEND_DIR%\requirements.txt" --no-cache-dir -i "%PIP_MIRROR%"
+    "%VENV_PIP%" install -r "%BACKEND_DIR%\requirements.txt" -i "%PIP_MIRROR%"
     if !errorlevel! neq 0 (
         echo.
         echo   X Python 依赖安装失败
@@ -314,7 +265,7 @@ if "!VENV_OK!"=="0" (
     ) else (
         echo     检测到变更，更新后端依赖，请稍候...
         echo.
-        "%VENV_PIP%" install -r "%BACKEND_DIR%\requirements.txt" --no-cache-dir -i "%PIP_MIRROR%"
+        "%VENV_PIP%" install -r "%BACKEND_DIR%\requirements.txt" -i "%PIP_MIRROR%"
         if !errorlevel! neq 0 (
             echo.
             echo   X Python 依赖更新失败
@@ -384,12 +335,13 @@ if "!CHROME_FOUND!"=="0" (
     if !errorlevel! equ 0 set "TMP_EXT=.tar.gz"
 
     set "TMP_FILE=%TEMP%\cloakbrowser!TMP_EXT!"
-    curl -L -# -o "!TMP_FILE!" "!DOWNLOAD_URL!"
+    set "ACCEL_URL=https://ghfast.top/!DOWNLOAD_URL!"
+    echo     正在通过国内高速镜像加速下载 (约 536MB)...
+    curl -L -C - -# -o "!TMP_FILE!" "!ACCEL_URL!"
     if !errorlevel! neq 0 (
         echo.
-        echo     主下载失败，尝试 GitHub 备用地址...
-        set "GITHUB_URL=!DOWNLOAD_URL:cloakbrowser.dev=github.com/CloakHQ/cloakbrowser/releases/download!"
-        curl -L -# -o "!TMP_FILE!" "!GITHUB_URL!"
+        echo     镜像下载受阻，尝试备用官方直连...
+        curl -L -C - -# -o "!TMP_FILE!" "!DOWNLOAD_URL!"
         if !errorlevel! neq 0 (
             del /f "!TMP_FILE!" >nul 2>&1
             echo   X CloakBrowser 下载失败，请检查网络连接
@@ -467,50 +419,8 @@ if not exist "%FRONTEND_DIR%\node_modules" (
     )
 )
 
-:: --- MCP: install deps + build ---
-set "HASH_FILE=%PROJECT_ROOT%\.mcp_deps_hash"
-set "CURRENT_HASH="
-for /f "tokens=*" %%i in ('git -C "%PROJECT_ROOT%" log -1 --format^=%%H -- backend-mcp 2^>nul') do set "CURRENT_HASH=%%i"
-if "!CURRENT_HASH!"=="" set "CURRENT_HASH=no-git"
-
-if not exist "%MCP_DIR%\node_modules" (
-    echo     安装 MCP 依赖，请稍候...
-    echo.
-    cd /d "%MCP_DIR%"
-    call npm install --prefer-offline --registry=https://registry.npmmirror.com
-    echo.
-    echo !CURRENT_HASH!> "%HASH_FILE%"
-    echo   √ MCP 依赖就绪
-) else (
-    set "SAVED_HASH="
-    if exist "%HASH_FILE%" (
-        for /f "tokens=*" %%i in ('type "%HASH_FILE%"') do set "SAVED_HASH=%%i"
-    ) else (
-        set "SAVED_HASH=none"
-    )
-    if "!CURRENT_HASH!"=="!SAVED_HASH!" (
-        echo   √ 依赖无变更，跳过
-    ) else (
-        echo     检测到变更，更新 MCP 依赖，请稍候...
-        echo.
-        cd /d "%MCP_DIR%"
-        call npm install --prefer-offline --registry=https://registry.npmmirror.com
-        echo.
-        echo !CURRENT_HASH!> "%HASH_FILE%"
-        echo   √ 依赖更新完成
-    )
-)
-
-:: 始终重新编译 MCP（保证 dist/ 与 src/ 同步）
-echo     编译 MCP ...
-cd /d "%MCP_DIR%"
-call npm run build
-if !errorlevel! neq 0 (
-    echo   X MCP 编译失败
-    pause
-    exit /b 1
-)
-echo   √ MCP 编译完成
+:: --- MCP: install deps + build (已跳过：仅发布内容无需 MCP 服务) ---
+echo   - MCP 依赖安装与编译已跳过 (当前为纯 Web 发布模式)
 
 :: ============================================================
 :: Step 5: 启动服务
@@ -537,29 +447,15 @@ start "SAU-Frontend" /B cmd /c "npm run dev > "%FRONTEND_LOG%" 2>&1"
 
 :: 等待前端进程启动并获取 PID
 timeout /t 2 /nobreak >nul
-for /f "tokens=5" %%a in ('netstat -aon ^| findstr :5173 ^| findstr LISTENING 2^>nul') do set "FRONTEND_PID=%%a"
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr :5188 ^| findstr LISTENING 2^>nul') do set "FRONTEND_PID=%%a"
 echo   √ 前端已启动 (PID: !FRONTEND_PID!)
 
-:: 启动 MCP
-cd /d "%MCP_DIR%"
-set "TRANSPORT_MODE=%TRANSPORT_MODE%"
-start "SAU-MCP" /B cmd /c "set TRANSPORT_MODE=%TRANSPORT_MODE%&& npm start > "%MCP_LOG%" 2>&1"
-
-:: 等待 MCP 进程启动
-timeout /t 2 /nobreak >nul
-:: 尝试从端口 5410 获取 PID（仅 sse/both 模式有效）
-set "MCP_PID="
-for /f "tokens=5" %%a in ('netstat -aon ^| findstr :5410 ^| findstr LISTENING 2^>nul') do set "MCP_PID=%%a"
-if defined MCP_PID (
-    echo   √ MCP 已启动 (PID: !MCP_PID!, transport: %TRANSPORT_MODE%)
-) else (
-    echo   √ MCP 已启动 (transport: %TRANSPORT_MODE%, stdio 模式)
-)
+:: MCP 服务已跳过（纯 Web 发布模式不需要 5410 端口）
+echo   - MCP 服务已跳过启动 (端口 5410 未占用)
 
 :: 保存 PID 到文件，用于停止服务
 echo !BACKEND_PID!> "%PROJECT_ROOT%\.backend.pid"
 echo !FRONTEND_PID!> "%PROJECT_ROOT%\.frontend.pid"
-if defined MCP_PID echo !MCP_PID!> "%PROJECT_ROOT%\.mcp.pid"
 
 cd /d "%PROJECT_ROOT%"
 
@@ -601,51 +497,26 @@ set /a "COUNT=0"
 set /a "COUNT+=1"
 if !COUNT! GTR 60 (
     echo   X 前端启动超时（60秒），但服务可能仍在运行
-    echo   请手动访问 http://localhost:5173 检查
+    echo   请手动访问 http://localhost:5188 检查
     echo.
-    goto wait_mcp
+    goto show_info
 )
-:: 检查端口 5173 是否被占用（前端已启动）
-netstat -an | findstr ":5173" | findstr "LISTENING" >nul 2>&1
+:: 检查端口 5188 是否被占用（前端已启动）
+netstat -an | findstr ":5188" | findstr "LISTENING" >nul 2>&1
 if !errorlevel! equ 0 (
     echo   √ 前端就绪
-    goto wait_mcp
+    goto show_info
 )
 timeout /t 1 /nobreak >nul
 goto wait_frontend
-
-:: 等待 MCP（通过日志里的 "[MCP] Server ready" 判断；最长 15 秒）
-:wait_mcp
-set /a "MCP_COUNT=0"
-:wait_mcp_loop
-set /a "MCP_COUNT+=1"
-if !MCP_COUNT! GTR 15 (
-    echo   ! MCP 启动检查超时（15秒），请查看日志: %MCP_LOG%
-    goto show_info
-)
-if exist "%MCP_LOG%" (
-    findstr /C:"Server ready" "%MCP_LOG%" >nul 2>&1
-    if !errorlevel! equ 0 (
-        echo   √ MCP 就绪 (transport: %TRANSPORT_MODE%)
-        goto show_info
-    )
-)
-timeout /t 1 /nobreak >nul
-goto wait_mcp_loop
 
 :show_info
 :: 显示访问入口
 echo.
 echo ============================================
-echo   前端界面: http://localhost:5173
+echo   前端界面: http://localhost:5188
 echo   后端 API: http://localhost:!BACKEND_PORT!
-if /i "%TRANSPORT_MODE%"=="sse" (
-    echo   MCP  SSE:   http://localhost:5410/sse
-) else if /i "%TRANSPORT_MODE%"=="both" (
-    echo   MCP  SSE:   http://localhost:5410/sse
-) else (
-    echo   MCP  stdio: 启动中 ^(transport=%TRANSPORT_MODE%^)
-)
+echo   MCP 服务: (未启动，仅运行 Web 发布)
 echo ============================================
 echo.
 echo 按 Ctrl+C 停止所有服务
